@@ -6,141 +6,38 @@ def sigmoid(t, tf, alpha):
     safe_exp = np.where(exponent > 0, 1 / (1 + np.exp(-exponent)), np.exp(exponent) / (1 + np.exp(exponent)))
     return safe_exp
 
-def Complete(Kb, J0, time_range):
-    pressures = []
-    for t in time_range:
-        P_ratio = 1/(1-Kb*t)
-        pressures.append(P_ratio)
-    return pressures
+def musteam(T, Q_ratio=1):
+    # Molar masses (g/mol)
+    M_H2O = 18.015
+    M_N2 = 28.0134
 
-def Standard(Ks, J0, time_range):
-    pressures = []
-    for t in time_range:
-        P_ratio = (1+(Ks*J0*t/2))**2
-        pressures.append(P_ratio)
-    return pressures
+    # Convert volume ratio to mole fraction
+    #N_conc = (Q_ratio / M_N2) / ((1 / M_H2O) + (Q_ratio / M_N2))
+    N_conc = Q_ratio
+    H2O_conc = 1 - N_conc
 
-def Intermediate(Ki, J0, time_range):
-    pressures = []
-    for t in time_range:
-        P_ratio =np.exp(Ki*J0*t)
-        pressures.append(P_ratio)
-    return pressures
+    # --- Steam properties ---
+    T0_H2O = 350             # K
+    mu0_H2O = 1.12e-5        # Pa·s
+    S_H2O = 1064             # K
 
-def Cake(Kc, J0, time_range):
-    pressures = []
-    for t in time_range:
-        P_ratio =(1+2*Kc*(J0**2)*t)**0.5
-        pressures.append(P_ratio)
-    return pressures
+    # --- Nitrogen properties ---
+    T0_N2 = 300              # K
+    mu0_N2 = 1.76e-5         # Pa·s
+    S_N2 = 111               # K
 
-def CakeComplete(Kc, Kb, J0, time_range):
-    pressures = []
-    for t in time_range:
-        #P_ratio = (1/(1-Kb*t))*(1-((Kc*J0**2)/(Kb))*np.log(1-Kb*t))
-        P_ratio = ((1+2*Kc*(J0**2)*t)**0.5)*(1/(1-Kb*t))
-        pressures.append(P_ratio)
-    return pressures
+    # Individual viscosities using Sutherland’s law
+    mu_H2O = mu0_H2O * (T / T0_H2O)**1.5 * (T0_H2O + S_H2O) / (T + S_H2O)
+    mu_N2 = mu0_N2 * (T / T0_N2)**1.5 * (T0_N2 + S_N2) / (T + S_N2)
 
-def CakeIntermediate(Kc, Ki, J0, time_range):
-    pressures = []
-    for t in time_range:
-        #P_ratio = np.exp(Ki*J0*t)*(1+((Kc*J0)/(Ki))*(np.exp(Ki*J0*t)-1))
-        P_ratio = ((1+2*Kc*(J0**2)*t)**0.5)*(np.exp(Ki*J0*t))
-        pressures.append(P_ratio)
-    return pressures
+    # Wilke's mixing rule
+    def phi(mu_i, mu_j, M_i, M_j):
+        return (1 + (mu_i / mu_j)**0.5 * (M_j / M_i)**0.25)**2 / (8 * (1 + M_i / M_j))**0.5
 
-def CompleteStandard(Kb, Ks, J0, time_range):
-    pressures = []
-    for t in time_range:
-        #P_ratio = 1/((1-Kb*t)*(1+((Ks*J0)/(2*Kb))*np.log(1-Kb*t))**2)
-        P_ratio = 1/(1-Kb*t)*((1+(Ks*J0*t/2))**2)
-        pressures.append(P_ratio)
-    return pressures
+    phi_12 = phi(mu_H2O, mu_N2, M_H2O, M_N2)
+    phi_21 = phi(mu_N2, mu_H2O, M_N2, M_H2O)
 
-def IntermediateStandard(Ki, Ks, J0, time_range):
-    pressures = []
-    for t in time_range:
-        #P_ratio = (np.exp(Ki*J0*t))/((1-((Ks)/(2*Ki))*(np.exp(Ki*J0*t)-1))**2)
-        P_ratio = (np.exp(Ki * J0 * t))*((1+(Ks*J0*t/2))**2)
-        pressures.append(P_ratio)
-    return pressures
+    mu_mix = (mu_H2O * H2O_conc) / (H2O_conc + phi_12 * N_conc) + \
+             (mu_N2 * N_conc) / (N_conc + phi_21 * H2O_conc)
 
-def CakeStandard(Kc, Ks, J0, time_range):
-    pressures = []
-    for t in time_range:
-        #P_ratio = ((1 - ((Ks * J0 * t) / 2)) ** (-2) + Kc * J0**2 * t)
-        P_ratio = ((1+2*Kc*(J0**2)*t)**0.5)*((1 + (Ks * J0 * t / 2)) ** 2)
-        pressures.append(P_ratio)
-    return pressures
-
-# Modified Sigmoidal version of CakeComplete
-def SigmoidCakeComplete(Kc, Kb, alpha, tf, b, J0, time_range):
-    pressures = []
-    for t in time_range:
-        # Time-dependent Kc and Kb
-        Kc_t = Kc * (1-sigmoid(t, tf, alpha))  # Cake term dominates over time
-        Kb_t = Kb * (sigmoid(t, tf, alpha))  # Standard term fades over time
-
-        b_t = b * (1-sigmoid(t, tf, alpha))  # Cake term dominates over time
-        # Pressure ratio calculation
-        P_ratio = (((1 + 2 * Kc_t * (J0 ** 2) * t) ** 0.5) + b_t) * (1 / (1 - Kb_t * t))
-        pressures.append(P_ratio)
-    return pressures
-
-# Modified Sigmoidal version of CakeIntermediate
-def SigmoidCakeIntermediate(Kc, Ki, alpha, tf, b, J0, time_range):
-    pressures = []
-    for t in time_range:
-        # Time-dependent Kc and Ki
-        Kc_t = Kc * (1-sigmoid(t, tf, alpha))  # Cake term dominates over time
-        Ki_t = Ki * (sigmoid(t, tf, alpha))  # Standard term fades over time
-
-        b_t = b * (1-sigmoid(t, tf, alpha))  # Cake term dominates over time
-        # Pressure ratio calculation
-        P_ratio = (((1 + 2 * Kc_t * (J0 ** 2) * t) ** 0.5) + b_t) * (np.exp(Ki_t * J0 * t))
-        pressures.append(P_ratio)
-    return pressures
-
-# Modified Sigmoidal version of CompleteStandard
-def SigmoidCompleteStandard(Kb, Ks, alpha, tf, b, J0, time_range):
-    pressures = []
-    for t in time_range:
-        # Time-dependent Kb and Ks
-        Kb_t = Kb * (sigmoid(t, tf, alpha))  # Cake term fades over time
-        Ks_t = Ks * (1 - sigmoid(t, tf, alpha))  # Standard term dominates over time
-
-        b_t = b * (1-sigmoid(t, tf, alpha))  # Cake term dominates over time
-        # Pressure ratio calculation
-        P_ratio = 1 / (1 - Kb_t * t) * (((1 + (Ks_t * J0 * t / 2)) ** 2) + b_t)
-        pressures.append(P_ratio)
-    return pressures
-
-# Modified Sigmoidal version of IntermediateStandard
-def SigmoidIntermediateStandard(Ki, Ks, alpha, tf, b, J0, time_range):
-    pressures = []
-    for t in time_range:
-        # Time-dependent Ki and Ks
-        Ki_t = Ki * ( sigmoid(t, tf, alpha))  # Cake term fades over time
-        Ks_t = Ks * (1 - sigmoid(t, tf, alpha))  # Standard term dominates over time
-
-        b_t = b * (1-sigmoid(t, tf, alpha))  # Cake term dominates over time
-        # Pressure ratio calculation
-        P_ratio = (np.exp(Ki_t * J0 * t)) * (((1 + (Ks_t * J0 * t / 2)) ** 2) + b_t)
-        pressures.append(P_ratio)
-    return pressures
-
-# Modified Sigmoidal version of CakeStandard
-def SigmoidCakeStandard(Kc, Ks, alpha, tf, b,  J0, time_range):
-    pressures = []
-    for t in time_range:
-        # Time-dependent Kc and Ks
-        Kc_t = Kc * (1-sigmoid(t, tf, alpha))  # Cake term dominates over time
-        Ks_t = Ks * ( sigmoid(t, tf, alpha))  # Standard term fades over time
-
-        b_t = b * (1-sigmoid(t, tf, alpha))  # Cake term dominates over time
-
-        # Pressure ratio calculation
-        P_ratio = (((1 + 2 * Kc_t * (J0 ** 2) * t) ** 0.5) + b_t) * ((1 + (Ks_t * J0 * t / 2)) ** 2)
-        pressures.append(P_ratio)
-    return pressures
+    return mu_mix
